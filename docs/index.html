@@ -33,12 +33,8 @@
           <th class="px-3 py-2">Org</th>
           <th class="px-3 py-2">Location</th>
           <th class="px-3 py-2">Cert CN</th>
-          <th class="px-3 py-2">Cert Subject Org</th>
-          <th class="px-3 py-2">Cert Issuer Org</th>
           <th class="px-3 py-2">TLS</th>
           <th class="px-3 py-2">HTTP</th>
-          <th class="px-3 py-2">HTTP Server</th>
-          <th class="px-3 py-2">SMTP Server</th>
           <th class="px-3 py-2">Redirect</th>
           <th class="px-3 py-2">Errors</th>
         </tr>
@@ -64,7 +60,6 @@
       summary.innerHTML = "";
       results = [];
 
-      // Split by lines that start with date or IP (to chunk each host info)
       const chunks = raw.split(/\n(?=\d{4}-\d{2}-\d{2}T|\d{1,3}(?:\.\d{1,3}){3})/);
 
       chunks.forEach((chunk) => {
@@ -88,29 +83,12 @@
         const certCNMatch = chunk.match(/Common Name:\s*([^\r\n]+)/i);
         const certCN = certCNMatch ? certCNMatch[1].trim() : "-";
 
-        // New: Cert Subject Organization
-        const certSubjOrgMatch = chunk.match(/Subject:\s*.*?O=([^,\r\n]+)/i);
-        const certSubjectOrg = certSubjOrgMatch ? certSubjOrgMatch[1].trim() : "-";
-
-        // New: Cert Issuer Organization
-        const certIssuerOrgMatch = chunk.match(/Issuer:\s*.*?O=([^,\r\n]+)/i);
-        const certIssuerOrg = certIssuerOrgMatch ? certIssuerOrgMatch[1].trim() : "-";
-
         const tlsMatch = chunk.match(/Supported SSL Versions:[\s\S]*?(TLSv1\.\d(?:,\s*TLSv1\.\d)*)/i);
         const tls = tlsMatch ? tlsMatch[1].trim() : "-";
 
         const httpMatch = chunk.match(/HTTP\/1\.\d\s+(\d{3})\s+([^\r\n]+)/i);
         const httpCode = httpMatch ? httpMatch[1] : "-";
         const httpMsg = httpMatch ? httpMatch[2] : "-";
-        const http = `${httpCode} ${httpMsg}`;
-
-        // New: HTTP Server header (Server: ...)
-        const httpServerMatch = chunk.match(/Server:\s*([^\r\n]+)/i);
-        const httpServer = httpServerMatch ? httpServerMatch[1].trim() : "-";
-
-        // New: SMTP Server Banner (lines starting with 220 or 250 with server info)
-        const smtpMatch = chunk.match(/^(220|250)\s.*?([^\s]+(?:\sESMTP\s[^\r\n]+)?)/m);
-        const smtpServer = smtpMatch ? smtpMatch[0].trim() : "-";
 
         const sslErrorMatch = chunk.match(/SSL Error:\s*([^\r\n]+)/i);
         const sslError = sslErrorMatch ? sslErrorMatch[1].trim() : "";
@@ -126,12 +104,8 @@
           org,
           location,
           certCN,
-          certSubjectOrg,
-          certIssuerOrg,
           tls,
-          http,
-          httpServer,
-          smtpServer,
+          http: `${httpCode} ${httpMsg}`,
           redirect: redirectURL,
           errors: errorDisplay
         });
@@ -151,7 +125,7 @@
       }
 
       const data = [
-        ["#", "IP", "Hostname", "Org", "Location", "Cert CN", "Cert Subject Org", "Cert Issuer Org", "TLS", "HTTP", "HTTP Server", "SMTP Server", "Redirect", "Errors"]
+        ["#", "IP", "Hostname", "Org", "Location", "Cert CN", "TLS", "HTTP", "Redirect", "Errors"]
       ];
 
       results.forEach((r, i) => {
@@ -162,12 +136,8 @@
           r.org,
           r.location,
           r.certCN,
-          r.certSubjectOrg,
-          r.certIssuerOrg,
           r.tls,
           r.http,
-          r.httpServer,
-          r.smtpServer,
           r.redirect,
           r.errors.replace(/<\/?[^>]+(>|$)/g, "")
         ]);
@@ -175,58 +145,49 @@
 
       const ws = XLSX.utils.aoa_to_sheet(data);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Results");
-      XLSX.writeFile(wb, "shodan-juicy-info.xlsx");
+      XLSX.utils.book_append_sheet(wb, ws, "Shodan Extract");
+
+      XLSX.writeFile(wb, `shodan_extracted_${Date.now()}.xlsx`);
     }
 
     function importXLS() {
-      const fileInput = document.getElementById('fileInput');
-      fileInput.click();
-      fileInput.onchange = () => {
-        const file = fileInput.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: "array" });
-          const firstSheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[firstSheetName];
-          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-          if (rows.length < 2) {
-            alert("Spreadsheet seems empty or invalid.");
-            return;
-          }
-
-          results = [];
-          for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-            if (row.length < 14) continue;
-            results.push({
-              ip: row[1] || "-",
-              hostname: row[2] || "-",
-              org: row[3] || "-",
-              location: row[4] || "-",
-              certCN: row[5] || "-",
-              certSubjectOrg: row[6] || "-",
-              certIssuerOrg: row[7] || "-",
-              tls: row[8] || "-",
-              http: row[9] || "-",
-              httpServer: row[10] || "-",
-              smtpServer: row[11] || "-",
-              redirect: row[12] || "-",
-              errors: row[13] || "-"
-            });
-          }
-
-          renderResults();
-          document.getElementById('summary').innerHTML = `📥 Loaded ${results.length} hosts from XLS`;
-          fileInput.value = "";
-        };
-        reader.readAsArrayBuffer(file);
-      };
+      document.getElementById('fileInput').click();
     }
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(firstSheet, {header:1, defval: ""});
+
+        results = [];
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || row.length < 10) continue;
+          results.push({
+            ip: row[1] || "-",
+            hostname: row[2] || "-",
+            org: row[3] || "-",
+            location: row[4] || "-",
+            certCN: row[5] || "-",
+            tls: row[6] || "-",
+            http: row[7] || "-",
+            redirect: row[8] || "-",
+            errors: row[9] ? `<span class="text-red-400">${row[9]}</span>` : "-"
+          });
+        }
+
+        renderResults();
+        document.getElementById('summary').innerHTML = `📥 Imported <span class="text-teal-300 font-bold">${results.length}</span> hosts from XLS`;
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = "";
+    });
 
     function renderResults() {
       const body = document.getElementById('resultsBody');
@@ -234,25 +195,20 @@
 
       results.forEach((r, i) => {
         const tr = document.createElement('tr');
-        tr.className = i % 2 === 0 ? "bg-gray-900" : "bg-gray-800";
+        tr.className = "hover:bg-gray-800";
 
         tr.innerHTML = `
-          <td class="px-3 py-1 whitespace-nowrap">${i + 1}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.ip}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.hostname}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.org}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.location}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.certCN}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.certSubjectOrg}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.certIssuerOrg}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.tls}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.http}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.httpServer}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.smtpServer}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.redirect}</td>
-          <td class="px-3 py-1 whitespace-nowrap">${r.errors}</td>
+          <td class="px-3 py-1">${i + 1}</td>
+          <td class="px-3 py-1 font-mono text-teal-300">${r.ip}</td>
+          <td class="px-3 py-1">${r.hostname}</td>
+          <td class="px-3 py-1">${r.org}</td>
+          <td class="px-3 py-1">${r.location}</td>
+          <td class="px-3 py-1">${r.certCN}</td>
+          <td class="px-3 py-1">${r.tls}</td>
+          <td class="px-3 py-1">${r.http}</td>
+          <td class="px-3 py-1 break-words max-w-xs text-blue-400">${r.redirect}</td>
+          <td class="px-3 py-1">${r.errors}</td>
         `;
-
         body.appendChild(tr);
       });
     }
@@ -263,26 +219,27 @@
         return;
       }
       localStorage.setItem('shodanResults', JSON.stringify(results));
-      alert("Progress saved to localStorage.");
+      alert("Progress saved locally.");
     }
 
     function loadProgress() {
-      const saved = localStorage.getItem('shodanResults');
-      if (!saved) {
+      const data = localStorage.getItem('shodanResults');
+      if (!data) {
         alert("No saved progress found.");
         return;
       }
-      results = JSON.parse(saved);
+      results = JSON.parse(data);
       renderResults();
-      document.getElementById('summary').innerHTML = `📂 Loaded ${results.length} hosts from localStorage`;
+      document.getElementById('summary').innerHTML = `📂 Loaded <span class="text-teal-300 font-bold">${results.length}</span> hosts from saved progress`;
     }
 
     function clearProgress() {
-      if (confirm("Are you sure you want to clear all saved data?")) {
+      if (confirm("Are you sure you want to clear saved progress and current results?")) {
         localStorage.removeItem('shodanResults');
         results = [];
-        document.getElementById('resultsBody').innerHTML = "";
-        document.getElementById('summary').innerHTML = "🗑️ Cleared saved data.";
+        renderResults();
+        document.getElementById('input').value = "";
+        document.getElementById('summary').innerHTML = "";
       }
     }
   </script>
